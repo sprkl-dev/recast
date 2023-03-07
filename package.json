@@ -1,6 +1,6 @@
 {
   "author": "Ben Newman <bn@cs.stanford.edu>",
-  "name": "recast",
+  "name": "@sprkl/recast",
   "version": "0.23.1",
   "description": "JavaScript syntax tree transformer, nondestructive pretty-printer, and automatic source map generator",
   "keywords": [
@@ -13,10 +13,10 @@
     "parsing",
     "pretty-printing"
   ],
-  "homepage": "http://github.com/benjamn/recast",
+  "homepage": "http://github.com/sprkl-dev/recast",
   "repository": {
     "type": "git",
-    "url": "git://github.com/benjamn/recast.git"
+    "url": "git://github.com/sprkl-dev/recast.git"
   },
   "license": "MIT",
   "main": "main.js",
