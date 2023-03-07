@@ -40,14 +40,14 @@ export function parse(source: string, options?: Partial<Options>) {
   const tokens: any[] = Array.isArray(ast.tokens)
     ? ast.tokens
     : require("esprima").tokenize(sourceWithoutTabs, {
-        loc: true,
-      });
+      loc: true,
+    });
 
   // We will reattach the tokens array to the file object below.
   delete ast.tokens;
 
   // Make sure every token has a token.value string.
-  tokens.forEach(function (token) {
+  tokens.forEach(function(token) {
     if (typeof token.value !== "string") {
       token.value = lines.sliceString(token.loc.start, token.loc.end);
     }
@@ -135,7 +135,7 @@ interface TreeCopierType {
 }
 
 interface TreeCopierConstructor {
-  new (lines: any, tokens: any): TreeCopierType;
+  new(lines: any, tokens: any): TreeCopierType;
 }
 
 const TreeCopier = function TreeCopier(
@@ -154,7 +154,7 @@ const TreeCopier = function TreeCopier(
 
 const TCp: TreeCopierType = TreeCopier.prototype;
 
-TCp.copy = function (node) {
+TCp.copy = function(node) {
   if (this.seen.has(node)) {
     return this.seen.get(node);
   }
@@ -162,7 +162,7 @@ TCp.copy = function (node) {
   if (isArray.check(node)) {
     const copy: any = new Array(node.length);
     this.seen.set(node, copy);
-    node.forEach(function (this: any, item: any, i: any) {
+    node.forEach(function(this: any, item: any, i: any) {
       copy[i] = this.copy(item);
     }, this);
     return copy;
@@ -243,53 +243,66 @@ TCp.copy = function (node) {
   return copy;
 };
 
-// If we didn't have any idea where in loc.tokens to look for tokens
-// contained by this loc, a binary search would be appropriate, but
-// because we maintain this.startTokenIndex and this.endTokenIndex as we
-// traverse the AST, we only need to make small (linear) adjustments to
-// those indexes with each recursive iteration.
-TCp.findTokenRange = function (loc) {
-  // In the unlikely event that loc.tokens[this.startTokenIndex] starts
-  // *after* loc.start, we need to rewind this.startTokenIndex first.
-  while (this.startTokenIndex > 0) {
-    const token = loc.tokens[this.startTokenIndex];
-    if (util.comparePos(loc.start, token.loc.start) < 0) {
-      --this.startTokenIndex;
-    } else break;
+TCp.findTokenRange = function(loc) {
+
+  if (loc.tokens.length === 0) {
+    return
   }
 
-  // In the unlikely event that loc.tokens[this.endTokenIndex - 1] ends
-  // *before* loc.end, we need to fast-forward this.endTokenIndex first.
-  while (this.endTokenIndex < loc.tokens.length) {
-    const token = loc.tokens[this.endTokenIndex];
-    if (util.comparePos(token.loc.end, loc.end) < 0) {
-      ++this.endTokenIndex;
-    } else break;
-  }
+  // If the start token index not in range, position at the start index or end index of the tokens array.
+  // if (this.startTokenIndex < 0) this.startTokenIndex = 0;
+  // if (this.startTokenIndex >= loc.tokens.length) this.startTokenIndex = loc.tokens.length - 1;
 
-  // Increment this.startTokenIndex until we've found the first token
-  // contained by this node.
-  while (this.startTokenIndex < this.endTokenIndex) {
-    const token = loc.tokens[this.startTokenIndex];
-    if (util.comparePos(token.loc.start, loc.start) < 0) {
-      ++this.startTokenIndex;
-    } else break;
+  let nextIndex = this.startTokenIndex;
+  let left = 0;
+  let right = loc.tokens.length - 1;
+  let done = false
+  while (!done) {
+    const comparedAgainstToken = util.comparePos(loc.start, loc.tokens[this.startTokenIndex].loc.start);
+    if (comparedAgainstToken > 0) {
+      left = this.startTokenIndex
+      nextIndex = Math.round((this.startTokenIndex + right) / 2);
+    } else if (comparedAgainstToken < 0) {
+      right = this.startTokenIndex
+      nextIndex = Math.round((this.startTokenIndex + left) / 2);
+    }
+    if (nextIndex === this.startTokenIndex) {
+      this.startTokenIndex;
+      done = true
+      break
+    }
+    this.startTokenIndex = nextIndex;
   }
-
   // Index into loc.tokens of the first token within this node.
   loc.start.token = this.startTokenIndex;
 
-  // Decrement this.endTokenIndex until we've found the first token after
-  // this node (not contained by the node).
-  while (this.endTokenIndex > this.startTokenIndex) {
-    const token = loc.tokens[this.endTokenIndex - 1];
-    if (util.comparePos(loc.end, token.loc.end) < 0) {
-      --this.endTokenIndex;
-    } else break;
-  }
+  // Always begin the search for the end token index from the start token index.
+  // If the deviation is large, this will improve the performance significantly.
+  // If the deviation is small or none, the end index is always very close to the start index so the search will be quick.
+  this.endTokenIndex = this.startTokenIndex;
 
+  nextIndex = this.endTokenIndex;
+  left = this.startTokenIndex;
+  right = loc.tokens.length - 1;
+  done = false
+  while (!done) {
+    const comparedAgainstToken = util.comparePos(loc.end, loc.tokens[this.endTokenIndex].loc.end);
+    if (comparedAgainstToken > 0) {
+      left = this.endTokenIndex
+      nextIndex = Math.round((this.endTokenIndex + right) / 2);
+    } else if (comparedAgainstToken < 0) {
+      right = this.endTokenIndex
+      nextIndex = Math.round((this.endTokenIndex + left) / 2);
+    }
+    if (nextIndex === this.endTokenIndex) {
+      done = true
+      break
+    }
+    this.endTokenIndex = nextIndex;
+  }
   // Index into loc.tokens of the first token *after* this node.
   // If loc.start.token === loc.end.token, the node contains no tokens,
   // and the index is that of the next token following this node.
-  loc.end.token = this.endTokenIndex;
+  loc.end.token = this.endTokenIndex + 1;
+
 };
