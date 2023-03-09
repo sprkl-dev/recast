@@ -250,29 +250,48 @@ TCp.findTokenRange = function(loc) {
   }
 
   // If the start token index not in range, position at the start index or end index of the tokens array.
-  // if (this.startTokenIndex < 0) this.startTokenIndex = 0;
-  // if (this.startTokenIndex >= loc.tokens.length) this.startTokenIndex = loc.tokens.length - 1;
-
-  let nextIndex = this.startTokenIndex;
-  let left = 0;
-  let right = loc.tokens.length - 1;
-  let done = false
-  while (!done) {
-    const comparedAgainstToken = util.comparePos(loc.start, loc.tokens[this.startTokenIndex].loc.start);
-    if (comparedAgainstToken > 0) {
-      left = this.startTokenIndex
-      nextIndex = Math.round((this.startTokenIndex + right) / 2);
-    } else if (comparedAgainstToken < 0) {
-      right = this.startTokenIndex
-      nextIndex = Math.round((this.startTokenIndex + left) / 2);
-    }
-    if (nextIndex === this.startTokenIndex) {
-      this.startTokenIndex;
-      done = true
-      break
-    }
-    this.startTokenIndex = nextIndex;
+  if (this.startTokenIndex < 0) {
+    this.startTokenIndex = 0;
   }
+  if (this.startTokenIndex >= loc.tokens.length) {
+    this.startTokenIndex = loc.tokens.length - 1;
+  }
+
+  this.startTokenIndex = ((index) => {
+
+    let nextIndex = index;
+    let leftIndex = 0;
+    let rightIndex = loc.tokens.length;
+    let indexDiff;
+
+    while (indexDiff !== 0) {
+      const c = util.comparePos(loc.start, loc.tokens[index].loc.start);
+      if (c > 0) { // Token is positioned before the node start (to its left), go right.
+        leftIndex = index
+        nextIndex = Math.floor((index + rightIndex) / 2);
+      }
+      else if (c < 0) { // Token is positioned after the node start (to its right), go left.
+        // Check if the token in previous index is before the node.
+        if (index > 0) {
+          const c = util.comparePos(loc.start, loc.tokens[index - 1].loc.start);
+          if (c > 0) {
+            // The token before this token is positioned before the node start.
+            // This token is the first token positioned after the node start.
+            return index
+          }
+        }
+        // Otherwise, this is not the first token after the node start, go more left.
+        rightIndex = index
+        nextIndex = Math.floor((index + leftIndex) / 2);
+      }
+      indexDiff = nextIndex - index;
+      index = nextIndex;
+    }
+
+    return index;
+
+  })(this.startTokenIndex);
+
   // Index into loc.tokens of the first token within this node.
   loc.start.token = this.startTokenIndex;
 
@@ -280,26 +299,41 @@ TCp.findTokenRange = function(loc) {
   // If the deviation is large, this will improve the performance significantly.
   // If the deviation is small or none, the end index is always very close to the start index so the search will be quick.
   this.endTokenIndex = this.startTokenIndex;
+  this.endTokenIndex = ((index) => {
 
-  nextIndex = this.endTokenIndex;
-  left = this.startTokenIndex;
-  right = loc.tokens.length - 1;
-  done = false
-  while (!done) {
-    const comparedAgainstToken = util.comparePos(loc.end, loc.tokens[this.endTokenIndex].loc.end);
-    if (comparedAgainstToken > 0) {
-      left = this.endTokenIndex
-      nextIndex = Math.round((this.endTokenIndex + right) / 2);
-    } else if (comparedAgainstToken < 0) {
-      right = this.endTokenIndex
-      nextIndex = Math.round((this.endTokenIndex + left) / 2);
+    let nextIndex = index;
+    let leftIndex = 0;
+    let rightIndex = loc.tokens.length;
+    let indexDiff;
+
+    while (indexDiff !== 0) {
+      const c = util.comparePos(loc.end, loc.tokens[index].loc.end);
+      if (c > 0) { // Token is positioned before the node end (to its left), go right.
+        leftIndex = index
+        nextIndex = Math.floor((index + rightIndex) / 2);
+      }
+      else if (c < 0) { // Token is positioned after the node end (to its right), go left.
+        // Check if the token in previous index is before the node.
+        if (index > 0) {
+          const c = util.comparePos(loc.end, loc.tokens[index - 1].loc.end);
+          if (c > 0) {
+            // The token before this token is positioned before the node end.
+            // This token is the first token positioned after the node end.
+            return index
+          }
+        }
+        // Otherwise, this is not the first token after the node end, go more left.
+        rightIndex = index
+        nextIndex = Math.floor((index + leftIndex) / 2);
+      }
+      indexDiff = nextIndex - index;
+      index = nextIndex;
     }
-    if (nextIndex === this.endTokenIndex) {
-      done = true
-      break
-    }
-    this.endTokenIndex = nextIndex;
-  }
+
+    return index;
+
+  })(this.endTokenIndex);
+   
   // Index into loc.tokens of the first token *after* this node.
   // If loc.start.token === loc.end.token, the node contains no tokens,
   // and the index is that of the next token following this node.
