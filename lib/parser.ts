@@ -8,6 +8,7 @@ import { fromString } from "./lines";
 import { attach as attachComments } from "./comments";
 import * as util from "./util";
 import { Options } from "./options";
+import { Direction, SortedArray } from 'search-sorted-array';
 
 export function parse(source: string, options?: Partial<Options>) {
   options = normalizeOptions(options);
@@ -245,98 +246,48 @@ TCp.copy = function(node) {
 
 TCp.findTokenRange = function(loc) {
 
-  if (loc.tokens.length === 0) {
-    return
+  const sortedTokensByStart = SortedArray.unsafe<{ loc: { start: unknown; end: unknown } }>(loc.tokens, (a, b) => util.comparePos(a.loc.start, b.loc.start))
+  const sortedTokensByEnd = SortedArray.unsafe<{ loc: { start: unknown; end: unknown } }>(loc.tokens, (a, b) => util.comparePos(a.loc.end, b.loc.end))
+
+  // In the unlikely event that loc.tokens[this.startTokenIndex] starts
+  // *after* loc.start, we need to rewind this.startTokenIndex first.
+  {
+    const { index } = sortedTokensByStart.searchLeft({ loc }, { inclusive: false, fromIndex: this.startTokenIndex }) ?? { index: this.startTokenIndex }
+    this.startTokenIndex = index;
   }
 
-  // If the start token index not in range, position at the start index or end index of the tokens array.
-  if (this.startTokenIndex < 0) {
-    this.startTokenIndex = 0;
+  // In the unlikely event that loc.tokens[this.endTokenIndex - 1] ends
+  // *before* loc.end, we need to fast-forward this.endTokenIndex first.
+  {
+    const { index } = sortedTokensByEnd.searchRight({ loc }, { inclusive: true, fromIndex: this.endTokenIndex }) ?? { index: this.endTokenIndex }
+    this.endTokenIndex = index;
   }
-  if (this.startTokenIndex >= loc.tokens.length) {
-    this.startTokenIndex = loc.tokens.length - 1;
+
+  // Increment this.startTokenIndex until we've found the first token
+  // contained by this node.
+  {
+    const { index } = sortedTokensByStart.search({ loc }, { inclusive: true, range: { left: this.startTokenIndex, right: this.endTokenIndex + 1 }, direction: Direction.Right }) ?? { index: this.startTokenIndex }
+    this.startTokenIndex = index;
   }
-
-  this.startTokenIndex = ((index) => {
-
-    let nextIndex = index;
-    let leftIndex = 0;
-    let rightIndex = loc.tokens.length;
-    let indexDiff;
-
-    while (indexDiff !== 0) {
-      const c = util.comparePos(loc.start, loc.tokens[index].loc.start);
-      if (c > 0) { // Token is positioned before the node start (to its left), go right.
-        leftIndex = index
-        nextIndex = Math.floor((index + rightIndex) / 2);
-      }
-      else if (c < 0) { // Token is positioned after the node start (to its right), go left.
-        // Check if the token in previous index is before the node.
-        if (index > 0) {
-          const c = util.comparePos(loc.start, loc.tokens[index - 1].loc.start);
-          if (c > 0) {
-            // The token before this token is positioned before the node start.
-            // This token is the first token positioned after the node start.
-            return index
-          }
-        }
-        // Otherwise, this is not the first token after the node start, go more left.
-        rightIndex = index
-        nextIndex = Math.floor((index + leftIndex) / 2);
-      }
-      indexDiff = nextIndex - index;
-      index = nextIndex;
-    }
-
-    return index;
-
-  })(this.startTokenIndex);
 
   // Index into loc.tokens of the first token within this node.
   loc.start.token = this.startTokenIndex;
 
-  // Always begin the search for the end token index from the start token index.
-  // If the deviation is large, this will improve the performance significantly.
-  // If the deviation is small or none, the end index is always very close to the start index so the search will be quick.
-  this.endTokenIndex = this.startTokenIndex;
-  this.endTokenIndex = ((index) => {
+  // Decrement this.endTokenIndex until we've found the first token after
+  // this node (not contained by the node).
+  {
+    const { index } = sortedTokensByEnd.search({ loc }, { inclusive: true, range: { left: this.startTokenIndex, right: this.endTokenIndex }, direction: Direction.Left }) ?? { index: this.endTokenIndex - 1 }
+    this.endTokenIndex = index + 1;
+  }
 
-    let nextIndex = index;
-    let leftIndex = 0;
-    let rightIndex = loc.tokens.length;
-    let indexDiff;
-
-    while (indexDiff !== 0) {
-      const c = util.comparePos(loc.end, loc.tokens[index].loc.end);
-      if (c > 0) { // Token is positioned before the node end (to its left), go right.
-        leftIndex = index
-        nextIndex = Math.floor((index + rightIndex) / 2);
-      }
-      else if (c < 0) { // Token is positioned after the node end (to its right), go left.
-        // Check if the token in previous index is before the node.
-        if (index > 0) {
-          const c = util.comparePos(loc.end, loc.tokens[index - 1].loc.end);
-          if (c > 0) {
-            // The token before this token is positioned before the node end.
-            // This token is the first token positioned after the node end.
-            return index
-          }
-        }
-        // Otherwise, this is not the first token after the node end, go more left.
-        rightIndex = index
-        nextIndex = Math.floor((index + leftIndex) / 2);
-      }
-      indexDiff = nextIndex - index;
-      index = nextIndex;
-    }
-
-    return index;
-
-  })(this.endTokenIndex);
-   
   // Index into loc.tokens of the first token *after* this node.
   // If loc.start.token === loc.end.token, the node contains no tokens,
   // and the index is that of the next token following this node.
-  loc.end.token = this.endTokenIndex + 1;
+  loc.end.token = this.endTokenIndex;
 
 };
+
+// Export the TreeCopier for testing purposes.
+export default {
+  [Symbol.for('TreeCopier')]: TreeCopier
+}
